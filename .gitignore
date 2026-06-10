@@ -1,0 +1,43 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+crash.log
+crash.*.log
+
+# Plan files (binary, may embed secrets)
+tfplan
+*.tfplan
+tfplan.destroy
+
+# Variable files (may contain secrets)
+*.tfvars
+*.tfvars.json
+!example.tfvars
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI config
+.terraformrc
+terraform.rc
+
+# Review gate marker (per-machine state, written by sdlc-core /review)
+.last-review
+
+# Editor / OS noise
+.DS_Store
+.vscode/
+.idea/
+
+# Local function build artifacts (Phase 3+)
+bin/
+obj/
+__pycache__/
+*.pyc
+.python-packages/
+local.settings.json
