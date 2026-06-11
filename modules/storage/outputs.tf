@@ -27,3 +27,9 @@ output "table_name" {
   description = "Name of the tickets table."
   value       = azurerm_storage_table.tickets.name
 }
+
+output "primary_access_key" {
+  description = "Primary access key. Used by AzureWebJobsStorage (the Functions host's bookkeeping storage). Application-level access still uses MI. Phase 5 hardening swaps the host to MI too."
+  value       = azurerm_storage_account.queue.primary_access_key
+  sensitive   = true
+}

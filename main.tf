@@ -14,7 +14,15 @@ terraform {
 }
 
 provider "azurerm" {
-  features {}
+  features {
+    # Application Insights auto-creates an "Smart Detection" action group
+    # inside the RG that Terraform doesn't track. Allow `destroy` to drop
+    # the whole group — ephemerality is the lab's point. Phase 5 may revisit
+    # for a more selective hardening posture.
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
+  }
   # storage_use_azuread tells the provider to use AAD tokens for data-plane
   # ops (creating containers, tables) instead of storage account keys. Keeps
   # the keys-free posture even before we lock down shared_access_key_enabled.
@@ -43,17 +51,21 @@ module "storage" {
   tags                = local.common_tags
 }
 
-# Phase 3+ — uncomment as those modules ship:
-#
-# module "function" {
-#   source              = "./modules/function"
-#   project_name        = var.project_name
-#   location            = var.location
-#   resource_group_name = azurerm_resource_group.lab.name
-#   storage_account_id  = module.storage.storage_account_id
-#   inbox_container     = module.storage.inbox_container_name
-#   table_name          = module.storage.table_name
-# }
+module "function" {
+  source                     = "./modules/function"
+  project_name               = var.project_name
+  location                   = var.location
+  resource_group_name        = azurerm_resource_group.lab.name
+  storage_account_id         = module.storage.storage_account_id
+  storage_account_name       = module.storage.storage_account_name
+  storage_account_access_key = module.storage.primary_access_key
+  inbox_container            = module.storage.container_names["inbox"]
+  completed_container        = module.storage.container_names["completed"]
+  table_name                 = module.storage.table_name
+  tags                       = local.common_tags
+}
+
+# Phase 5 — uncomment when observability ships:
 #
 # module "observability" {
 #   source              = "./modules/observability"

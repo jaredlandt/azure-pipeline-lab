@@ -27,3 +27,13 @@ output "table_name" {
   description = "Tickets table in Table Storage."
   value       = module.storage.table_name
 }
+
+output "function_app_name" {
+  description = "Function App name. Used by deploy_function.sh and for portal lookup."
+  value       = module.function.function_app_name
+}
+
+output "function_app_hostname" {
+  description = "Function App default hostname."
+  value       = module.function.function_app_default_hostname
+}
