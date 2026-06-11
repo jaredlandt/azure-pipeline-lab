@@ -1,5 +1,5 @@
 variable "project_name" {
-  description = "Inherited from root — drives resource naming."
+  description = "Inherited from root — drives resource naming (hyphens stripped for storage account)."
   type        = string
 
   validation {
@@ -16,4 +16,10 @@ variable "location" {
 variable "resource_group_name" {
   description = "Resource group the storage account lives in."
   type        = string
+}
+
+variable "tags" {
+  description = "Tags applied to the storage account. Inherits from root composition."
+  type        = map(string)
+  default     = {}
 }
