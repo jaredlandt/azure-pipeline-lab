@@ -46,6 +46,10 @@ resource "azurerm_storage_container" "stages" {
 }
 
 # Table storage — ticket record store. SQLite's spiritual successor.
+#
+# Note: azurerm_storage_table v4.76 still requires storage_account_name, while
+# the container resource migrated to storage_account_id. Inconsistent within
+# the same provider, but correct as of v4.76 — re-check on the next major bump.
 resource "azurerm_storage_table" "tickets" {
   name                 = "tickets"
   storage_account_name = azurerm_storage_account.queue.name
