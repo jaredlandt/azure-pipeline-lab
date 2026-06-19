@@ -12,3 +12,8 @@ output "principal_id" {
   description = "Object ID of the function's system-assigned managed identity. Useful for auditing role assignments."
   value       = azurerm_linux_function_app.function.identity[0].principal_id
 }
+
+output "application_insights_id" {
+  description = "Full resource ID of the Application Insights instance. Used by the observability module as the workbook's KQL scope."
+  value       = azurerm_application_insights.function.id
+}

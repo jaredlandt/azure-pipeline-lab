@@ -33,6 +33,14 @@ resource "azurerm_storage_account" "queue" {
   min_tls_version                 = "TLS1_2"
   allow_nested_items_to_be_public = false
 
+  # Phase 5 hardening: disable account keys entirely. Every caller — Terraform
+  # (storage_use_azuread = true on the provider), the Functions host
+  # (storage_uses_managed_identity = true), the GitHub Actions deploy step
+  # (--auth-mode login), application code (DefaultAzureCredential) — already
+  # uses AAD/MI. With keys disabled, leaked-credential blast radius collapses
+  # to "whatever the SP/MI can reach within its scoped roles."
+  shared_access_key_enabled = false
+
   tags = var.tags
 }
 

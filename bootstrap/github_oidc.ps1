@@ -28,7 +28,12 @@ param(
     [string]$GitHubOrg   = "jaredlandt",
     [string]$GitHubRepo  = "azure-pipeline-lab",
     [string]$AppName     = "azure-pipeline-lab-gha",
-    [string]$TfStateRg   = "rg-tfstate"
+    [string]$TfStateRg   = "rg-tfstate",
+    # When set, also grants the signed-in user Storage Blob Data Contributor
+    # at lab RG scope so local smoke tests (drop a ticket into inbox) work
+    # without a separate role assignment. Owner is control-plane only; this
+    # lesson resurfaces every phase (see Phase 1 & Phase 4 field notes).
+    [switch]$GrantLocalUserDataPlane
 )
 
 $ErrorActionPreference = "Stop"
@@ -157,11 +162,28 @@ az role assignment create `
     --output none 2>$null
 Write-Host "    Storage Blob Data Contributor on $LabRg"
 
+# Optional: grant the local user data-plane access for smoke tests.
+if ($GrantLocalUserDataPlane) {
+    Write-Host "==> Local user data-plane access"
+    $UserOid = az ad signed-in-user show --query id -o tsv
+    az role assignment create `
+        --assignee-object-id $UserOid `
+        --assignee-principal-type User `
+        --role "Storage Blob Data Contributor" `
+        --scope $LabRgScope `
+        --output none 2>$null
+    Write-Host "    Storage Blob Data Contributor on $LabRg (current user)"
+}
+
+# Emit literal `gh variable set` commands. `gh` is cwd-aware, so as long
+# as the operator runs these from the lab repo's working directory the
+# variables land on the right repo automatically — no copy-paste-into-
+# wrong-tab failure mode (Phase 4 field note).
 Write-Host ""
-Write-Host "Done. Paste these into GitHub repo *variables* (Settings -> Secrets and variables -> Actions -> Variables):"
+Write-Host "Done. From inside the repo (cd $GitHubRepo first), run:"
 Write-Host ""
-Write-Host "  AZURE_CLIENT_ID       = $AppId"
-Write-Host "  AZURE_TENANT_ID       = $TenantId"
-Write-Host "  AZURE_SUBSCRIPTION_ID = $SubId"
+Write-Host "  gh variable set AZURE_CLIENT_ID --body '$AppId'"
+Write-Host "  gh variable set AZURE_TENANT_ID --body '$TenantId'"
+Write-Host "  gh variable set AZURE_SUBSCRIPTION_ID --body '$SubId'"
 Write-Host ""
 Write-Host "No client secret is generated — that's the point of OIDC."
