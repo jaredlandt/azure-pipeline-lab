@@ -29,8 +29,14 @@ variable "storage_account_id" {
 }
 
 variable "storage_account_name" {
-  description = "Name of the queue storage account — used by AzureWebJobsStorage (MI-based, Phase 5 hardened) and by application code via the QUEUE_STORAGE_ACCOUNT app setting."
+  description = "Name of the queue storage account — used by AzureWebJobsStorage (connection-string, Phase 3+5 confirmed MI is fragile on Linux consumption) and by application code via the QUEUE_STORAGE_ACCOUNT app setting."
   type        = string
+}
+
+variable "storage_account_access_key" {
+  description = "Primary access key for the queue storage account. Used by AzureWebJobsStorage for host bookkeeping; application code still authenticates via MI. Backlog: switch host to MI once the Linux consumption blob-trigger machinery supports it cleanly."
+  type        = string
+  sensitive   = true
 }
 
 variable "inbox_container" {
