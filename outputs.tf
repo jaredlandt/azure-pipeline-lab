@@ -42,3 +42,8 @@ output "package_container_name" {
   description = "Name of the function-package container. GitHub Actions uploads release.zip here on every apply."
   value       = module.storage.package_container_name
 }
+
+output "workbook_id" {
+  description = "Pipeline-health workbook resource ID. Open in the portal: Application Insights -> Workbooks."
+  value       = module.observability.workbook_id
+}

@@ -1,0 +1,63 @@
+name: Terraform Destroy
+
+# Manual end-of-session teardown without local CLI. The discipline from
+# Lab 1 holds (`apply` and `destroy` in the same session), but this lets
+# the destroy happen from anywhere — useful on a machine that doesn't
+# have az/terraform installed (Phase 5 polish item).
+#
+# Belt-and-braces: requires explicit "yes" typed into the confirm input
+# AND the workflow won't run on auto-trigger — only workflow_dispatch.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "yes" to confirm destroy of all lab resources'
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: terraform-apply-main
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: 1.9.8
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: validate confirmation
+        if: ${{ github.event.inputs.confirm != 'yes' }}
+        run: |
+          echo "::error::Confirmation input must be the literal string 'yes'. Refusing to run."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform init
+        run: terraform init -input=false
+
+      - name: terraform plan -destroy
+        run: terraform plan -destroy -no-color -input=false -out=tfplan.destroy
+
+      - name: terraform apply (destroy)
+        run: terraform apply -input=false tfplan.destroy

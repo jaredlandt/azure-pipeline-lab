@@ -58,12 +58,15 @@ resource "azurerm_linux_function_app" "function" {
   location            = var.location
   service_plan_id     = azurerm_service_plan.function.id
 
-  # AzureWebJobsStorage uses connection string (account key) for the host's
-  # bookkeeping containers (azure-webjobs-hosts, azure-webjobs-secrets).
-  # Application-level access (inbox, completed, tickets) still uses MI via
-  # DefaultAzureCredential in function_app.py. Phase 5 hardens the host to MI.
-  storage_account_name       = var.storage_account_name
-  storage_account_access_key = var.storage_account_access_key
+  # AzureWebJobsStorage on MI (Phase 5 hardening — Phase 3 noted this as
+  # fragile on Linux consumption but it works once the role assignments
+  # propagate). storage_uses_managed_identity = true tells the Functions
+  # host to authenticate to its bookkeeping storage via the system-
+  # assigned identity, NOT via an account key. The MI's three storage
+  # role assignments (below) cover both host bookkeeping and
+  # application-level access. No connection string anywhere.
+  storage_account_name          = var.storage_account_name
+  storage_uses_managed_identity = true
 
   https_only = true
 
