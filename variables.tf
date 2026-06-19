@@ -23,7 +23,7 @@ variable "location" {
 variable "environment" {
   description = "Environment tag applied to every resource (dev, demo, staging, etc.). The done-when smoke test for Phase 4 CI/CD is a PR that flips this value."
   type        = string
-  default     = "dev"
+  default     = "demo"
 
   validation {
     condition     = can(regex("^[a-z][a-z0-9-]{0,15}$", var.environment))
