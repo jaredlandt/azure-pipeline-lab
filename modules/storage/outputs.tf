@@ -28,6 +28,11 @@ output "table_name" {
   value       = azurerm_storage_table.tickets.name
 }
 
+output "package_container_name" {
+  description = "Name of the function deployment-package container. GitHub Actions uploads the zip here and points WEBSITE_RUN_FROM_PACKAGE at it (unsigned URL — Function App MI provides read auth)."
+  value       = azurerm_storage_container.package.name
+}
+
 output "primary_access_key" {
   description = "Primary access key. Used by AzureWebJobsStorage (the Functions host's bookkeeping storage). Application-level access still uses MI. Phase 5 hardening swaps the host to MI too."
   value       = azurerm_storage_account.queue.primary_access_key

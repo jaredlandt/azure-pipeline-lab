@@ -45,6 +45,16 @@ resource "azurerm_storage_container" "stages" {
   container_access_type = "private"
 }
 
+# Deployment artifact container. Holds the zipped function package that
+# WEBSITE_RUN_FROM_PACKAGE points at. Kept off the stages for_each because
+# it isn't part of the ticket-flow vocabulary; mixing it in would make a
+# reorder of the stages set churn this container's state too.
+resource "azurerm_storage_container" "package" {
+  name                  = "function-package"
+  storage_account_id    = azurerm_storage_account.queue.id
+  container_access_type = "private"
+}
+
 # Table storage — ticket record store. SQLite's spiritual successor.
 #
 # Note: azurerm_storage_table v4.76 still requires storage_account_name, while

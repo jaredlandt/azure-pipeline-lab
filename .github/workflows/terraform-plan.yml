@@ -1,0 +1,136 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "README.md"
+      - "**/*.md"
+      - ".gitignore"
+      - "bootstrap/**"
+
+permissions:
+  id-token: write       # OIDC token issuance for azure/login
+  pull-requests: write  # post the sticky plan comment
+  contents: read
+
+# Cancel in-flight plan runs on a new push to the PR — saves CI time and
+# avoids stale comments overwriting fresh ones in a race.
+concurrency:
+  group: terraform-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  TF_VERSION: 1.9.8
+  # The azurerm backend's auth resolution is pickier than the provider's
+  # (Phase 1 field note). Pin the OIDC env vars explicitly so init doesn't
+  # fall back to interactive `az login` chain probing.
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false  # so plan exit code surfaces to the step
+
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive
+
+      - name: terraform init
+        run: terraform init -input=false
+
+      - name: terraform validate
+        run: terraform validate -no-color
+
+      - name: terraform plan
+        id: plan
+        # -detailed-exitcode: 0 = no changes, 2 = changes present, 1 = error.
+        # We treat 2 as success (and post the diff); only 1 fails the run.
+        run: |
+          set +e
+          terraform plan -no-color -input=false -out=tfplan -detailed-exitcode
+          code=$?
+          set -e
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -eq 1 ]; then
+            echo "::error::terraform plan failed"
+            exit 1
+          fi
+          terraform show -no-color tfplan > plan.txt
+
+      - name: comment on PR
+        if: always() && steps.plan.outputs.exitcode != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- terraform-plan-sticky -->';
+            const code = '${{ steps.plan.outputs.exitcode }}';
+            let summary;
+            if (code === '0') summary = 'No changes. Infrastructure matches configuration.';
+            else if (code === '2') summary = 'Plan succeeded with changes.';
+            else summary = 'Plan failed.';
+
+            let planText = '';
+            try { planText = fs.readFileSync('plan.txt', 'utf8'); }
+            catch (e) { planText = '(no plan output — earlier step failed)'; }
+
+            // GitHub comment hard limit ~65k chars; truncate with a tail so
+            // the summary at the bottom of the plan stays visible.
+            const MAX = 60000;
+            if (planText.length > MAX) {
+              planText = planText.slice(0, MAX / 2) +
+                `\n\n... (truncated ${planText.length - MAX} chars) ...\n\n` +
+                planText.slice(-MAX / 2);
+            }
+
+            const body = [
+              marker,
+              `### Terraform Plan — \`${summary}\``,
+              '',
+              `Workflow: [${context.workflow} #${context.runNumber}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+              '',
+              '<details><summary>Show plan</summary>',
+              '',
+              '```hcl',
+              planText,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

@@ -31,23 +31,25 @@ provider "azurerm" {
 
 locals {
   common_tags = {
-    project = var.project_name
-    lab     = "azure-pipeline-lab"
-    managed = "terraform"
+    project     = var.project_name
+    lab         = "azure-pipeline-lab"
+    managed     = "terraform"
+    environment = var.environment
   }
 }
 
-resource "azurerm_resource_group" "lab" {
-  name     = "rg-${var.project_name}"
-  location = var.location
-  tags     = local.common_tags
+# The lab RG is bootstrapped by bootstrap/github_oidc.ps1 so the GitHub
+# Actions SP can be scoped to it before the first apply. Terraform reads
+# it as a data source; lifecycle of the RG itself lives outside state.
+data "azurerm_resource_group" "lab" {
+  name = "rg-${var.project_name}"
 }
 
 module "storage" {
   source              = "./modules/storage"
   project_name        = var.project_name
   location            = var.location
-  resource_group_name = azurerm_resource_group.lab.name
+  resource_group_name = data.azurerm_resource_group.lab.name
   tags                = local.common_tags
 }
 
@@ -55,7 +57,7 @@ module "function" {
   source                     = "./modules/function"
   project_name               = var.project_name
   location                   = var.location
-  resource_group_name        = azurerm_resource_group.lab.name
+  resource_group_name        = data.azurerm_resource_group.lab.name
   storage_account_id         = module.storage.storage_account_id
   storage_account_name       = module.storage.storage_account_name
   storage_account_access_key = module.storage.primary_access_key
@@ -71,5 +73,5 @@ module "function" {
 #   source              = "./modules/observability"
 #   project_name        = var.project_name
 #   location            = var.location
-#   resource_group_name = azurerm_resource_group.lab.name
+#   resource_group_name = data.azurerm_resource_group.lab.name
 # }
