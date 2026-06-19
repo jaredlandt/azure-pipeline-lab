@@ -1,0 +1,163 @@
+name: Terraform Apply
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "README.md"
+      - "**/*.md"
+      - ".gitignore"
+      - "bootstrap/**"
+
+permissions:
+  id-token: write
+  contents: read
+
+# Serialize apply runs to main. Two parallel applies would race on remote
+# state's lease and one would fail; making it explicit is cleaner than
+# relying on the lease for correctness.
+concurrency:
+  group: terraform-apply-main
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: 1.9.8
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    outputs:
+      function_app_name: ${{ steps.tf_out.outputs.function_app_name }}
+      resource_group_name: ${{ steps.tf_out.outputs.resource_group_name }}
+      storage_account_name: ${{ steps.tf_out.outputs.storage_account_name }}
+      package_container_name: ${{ steps.tf_out.outputs.package_container_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform init
+        run: terraform init -input=false
+
+      - name: terraform plan
+        run: terraform plan -no-color -input=false -out=tfplan
+
+      - name: terraform apply
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: capture outputs
+        id: tf_out
+        run: |
+          {
+            echo "function_app_name=$(terraform output -raw function_app_name)"
+            echo "resource_group_name=$(terraform output -raw resource_group_name)"
+            echo "storage_account_name=$(terraform output -raw storage_account_name)"
+            echo "package_container_name=$(terraform output -raw package_container_name)"
+          } >> "$GITHUB_OUTPUT"
+
+  deploy_function:
+    needs: terraform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: vendor Linux deps
+        # Without these flags pip drops macOS/source wheels into the zip
+        # and the Function host fails to import — silently registering
+        # zero functions (Phase 3 field note).
+        run: |
+          mkdir -p stage/.python_packages/lib/site-packages
+          pip install \
+            --target stage/.python_packages/lib/site-packages \
+            --platform manylinux2014_x86_64 \
+            --only-binary=:all: \
+            --python-version 3.11 \
+            -r function_app/requirements.txt
+          cp function_app/function_app.py stage/
+          cp function_app/host.json stage/
+          cp function_app/requirements.txt stage/
+
+      - name: package release.zip
+        run: |
+          cd stage
+          zip -r ../release.zip . -x "*.pyc" "__pycache__/*"
+          cd ..
+          ls -lh release.zip
+
+      - name: upload to function-package container
+        env:
+          SA: ${{ needs.terraform.outputs.storage_account_name }}
+          CONTAINER: ${{ needs.terraform.outputs.package_container_name }}
+        run: |
+          # --auth-mode login uses the OIDC SP's Entra identity for the
+          # data-plane op (no account keys). The SP holds Storage Blob Data
+          # Contributor at lab RG scope (granted by bootstrap/github_oidc.ps1)
+          # which covers the SA's random-suffixed name.
+          az storage blob upload \
+            --auth-mode login \
+            --account-name "$SA" \
+            --container-name "$CONTAINER" \
+            --name release.zip \
+            --file release.zip \
+            --overwrite \
+            --output none
+
+      - name: set WEBSITE_RUN_FROM_PACKAGE
+        env:
+          APP: ${{ needs.terraform.outputs.function_app_name }}
+          RG: ${{ needs.terraform.outputs.resource_group_name }}
+          SA: ${{ needs.terraform.outputs.storage_account_name }}
+          CONTAINER: ${{ needs.terraform.outputs.package_container_name }}
+        run: |
+          # Unsigned URL — no SAS. The Function App's MI has Storage Blob
+          # Data Owner on this storage account (modules/function:117), so
+          # it can read the package at warm-up via its own identity. This
+          # is the Phase 4 swap the deploy_function.sh comments referenced.
+          URL="https://${SA}.blob.core.windows.net/${CONTAINER}/release.zip"
+          az functionapp config appsettings set \
+            --resource-group "$RG" \
+            --name "$APP" \
+            --settings "WEBSITE_RUN_FROM_PACKAGE=$URL" \
+            --output none
+
+      - name: restart function app
+        env:
+          APP: ${{ needs.terraform.outputs.function_app_name }}
+          RG: ${{ needs.terraform.outputs.resource_group_name }}
+        run: |
+          az functionapp restart --resource-group "$RG" --name "$APP" --output none
+
+      - name: probe host status
+        env:
+          APP: ${{ needs.terraform.outputs.function_app_name }}
+          RG: ${{ needs.terraform.outputs.resource_group_name }}
+        run: |
+          # Data-plane RBAC propagation lag can be ~90s on cold runs
+          # (Phase 3 field note). Sleep then probe; don't fail the run
+          # on a non-200 — the deploy succeeded even if warm-up takes longer.
+          sleep 90
+          STATUS=$(az functionapp show --resource-group "$RG" --name "$APP" --query state -o tsv)
+          echo "Function App state: $STATUS"

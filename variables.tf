@@ -19,3 +19,14 @@ variable "location" {
     error_message = "location must be a valid Azure region name (lowercase alphanumeric, no spaces). Examples: centralus, eastus, westus2."
   }
 }
+
+variable "environment" {
+  description = "Environment tag applied to every resource (dev, demo, staging, etc.). The done-when smoke test for Phase 4 CI/CD is a PR that flips this value."
+  type        = string
+  default     = "dev"
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{0,15}$", var.environment))
+    error_message = "environment must be 1-16 chars, lowercase alphanumeric/hyphens, starting with a letter."
+  }
+}
