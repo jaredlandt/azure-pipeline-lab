@@ -54,16 +54,17 @@ module "storage" {
 }
 
 module "function" {
-  source               = "./modules/function"
-  project_name         = var.project_name
-  location             = var.location
-  resource_group_name  = data.azurerm_resource_group.lab.name
-  storage_account_id   = module.storage.storage_account_id
-  storage_account_name = module.storage.storage_account_name
-  inbox_container      = module.storage.container_names["inbox"]
-  completed_container  = module.storage.container_names["completed"]
-  table_name           = module.storage.table_name
-  tags                 = local.common_tags
+  source                     = "./modules/function"
+  project_name               = var.project_name
+  location                   = var.location
+  resource_group_name        = data.azurerm_resource_group.lab.name
+  storage_account_id         = module.storage.storage_account_id
+  storage_account_name       = module.storage.storage_account_name
+  storage_account_access_key = module.storage.primary_access_key
+  inbox_container            = module.storage.container_names["inbox"]
+  completed_container        = module.storage.container_names["completed"]
+  table_name                 = module.storage.table_name
+  tags                       = local.common_tags
 }
 
 module "observability" {
