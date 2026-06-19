@@ -33,13 +33,16 @@ resource "azurerm_storage_account" "queue" {
   min_tls_version                 = "TLS1_2"
   allow_nested_items_to_be_public = false
 
-  # Phase 5 hardening: disable account keys entirely. Every caller — Terraform
-  # (storage_use_azuread = true on the provider), the Functions host
-  # (storage_uses_managed_identity = true), the GitHub Actions deploy step
-  # (--auth-mode login), application code (DefaultAzureCredential) — already
-  # uses AAD/MI. With keys disabled, leaked-credential blast radius collapses
-  # to "whatever the SP/MI can reach within its scoped roles."
-  shared_access_key_enabled = false
+  # Phase 5 hardening attempted shared_access_key_enabled = false here.
+  # Blocked by an azurerm provider gap: the azurerm_storage_table resource
+  # uses key-based auth when setting table ACLs (even when nothing else
+  # in the config or provider needs keys), and 403s with that flag set
+  # ("Key based authentication is not permitted on this storage account").
+  # Phase 2 field note had already flagged the table resource as lagging
+  # the v4 auth migration. Backlog: revisit when azurerm catches up; no
+  # caller in this lab uses keys in practice (host on MI, CI on --auth-mode
+  # login, app on DefaultAzureCredential), so leaving them enabled-but-
+  # unused is the lowest-risk landing pad until the provider gap closes.
 
   tags = var.tags
 }
