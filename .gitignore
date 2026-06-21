@@ -7,9 +7,8 @@ crash.log
 crash.*.log
 
 # Plan files (binary, may embed secrets)
-tfplan
+tfplan*
 *.tfplan
-tfplan.destroy
 
 # Variable files (may contain secrets)
 *.tfvars
